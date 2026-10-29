@@ -1,11 +1,11 @@
 // One-time bridge from the exact legacy ZIP updater to the stable native launcher.
-const fs=require('node:fs'),path=require('node:path'),{spawn}=require('node:child_process'),{app,BrowserWindow,ipcMain,dialog}=require('electron');
+const fs=require('original-fs'),path=require('node:path'),{spawn}=require('node:child_process'),{app,BrowserWindow,ipcMain,dialog}=require('electron');
 const engine=require('./app/electron/desktop-update.cjs'),{createChannelClient}=require('./app/electron/update-channel.cjs');
 const root=path.dirname(process.execPath),payload=path.join(__dirname,'app'),inventory=JSON.parse(fs.readFileSync(path.join(payload,'assets/workhub-installation.json'))),version=inventory.version;
 let win,busy=false;app.setAppUserModelId('agency.neyen.workhub');app.setPath('userData',path.join(app.getPath('appData'),'workhub-desktop'));
 const progress=s=>win.webContents.send('transition-state',s),tick=()=>new Promise(r=>setImmediate(r));
 async function start(){
- if(busy)return {};busy=true;let job;
+ if(busy)return {};busy=true;let job;const startedAt=Date.now();
  try{
   const choice=await dialog.showMessageBox(win,{type:'question',message:'Instalar WorkHub '+version+' y activar las actualizaciones online',detail:'Se respaldará el programa actual. Se conservan los perfiles de cuentas y las preferencias. Se verificará el arranque de la versión nueva.',buttons:['Instalar','Cancelar'],cancelId:1,defaultId:0});if(choice.response!==0)return {};
   const resources=path.join(root,'resources');
@@ -18,14 +18,14 @@ async function start(){
   const id=require('node:crypto').randomUUID();job=path.join(updates,id);fs.mkdirSync(job);const stage=path.join(job,'stage');
   // Verify app payload and every exact runtime file before touching the installation.
   let runtimeSource=null;const runtimeEntries=Object.entries(inventory.files).filter(([n])=>n.startsWith('runtime/'));
-  for(const [name,record]of runtimeEntries){const relative=name.slice(8),file=path.join(root,relative==='WorkhubEngine.exe'?path.basename(process.execPath):relative);if(!fs.existsSync(file)||fs.statSync(file).size!==record.size||await engine.hashFile(file)!==record.sha256){runtimeSource=false;break;}}
+  for(const [name,record]of runtimeEntries){progress({message:'Verificando motor local: '+name});const relative=name.slice(8),file=path.join(root,relative==='WorkhubEngine.exe'?path.basename(process.execPath):relative);if(!fs.existsSync(file)||fs.statSync(file).size!==record.size||await engine.hashFile(file)!==record.sha256){runtimeSource=false;break;}}
   if(runtimeSource===false){
    const client=createChannelClient(),channel=JSON.parse(fs.readFileSync(path.join(payload,'assets/update-channel.json'))).channel,info=await client.check(channel.replace('/releases/latest/download/latest.json','/releases/download/v'+version+'/latest.json'),'0.0.0');
    if(info.version!==version)throw Error('El canal cambió de versión. Usá el ZIP de transición más reciente.');
    const file=path.join(job,'runtime-download.zip');await client.request(info.full.url,{destination:file,expectedHash:info.full.sha256,expectedSize:info.full.size,onProgress:p=>progress({message:p.message||'Descargando motor compatible…',received:p.received,size:p.total})});
    runtimeSource=engine.unzip(await fs.promises.readFile(file));
   }
-  const journal={id,root,from:JSON.parse(fs.readFileSync(path.join(legacyBackup,'package.json'))).version,to:version,state:'prepared',workerPid:0,entries:[],targetInventory:inventory,legacyBackup,startedAt:Date.now()};
+  const journal={id,root,from:JSON.parse(fs.readFileSync(path.join(legacyBackup,'package.json'))).version,to:version,state:'prepared',workerPid:0,entries:[],targetInventory:inventory,legacyBackup,startedAt};
   const records=[...Object.entries(inventory.files),['assets/workhub-installation.json',{sha256:engine.sha(fs.readFileSync(path.join(payload,'assets/workhub-installation.json')))}]];let done=0;
   for(const [name,record]of records){
    const dest=engine.inside(stage,name);fs.mkdirSync(path.dirname(dest),{recursive:true});

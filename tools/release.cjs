@@ -61,8 +61,6 @@ async function build(){
  }else{
   feed.transitions=require(path.join(tools,'transition-package.cjs')).build(out,releaseDir,repo,p.version);
  }
- // One-time rescue for installations whose old worker cannot install its own fix.
- if(p.version==='0.1.39'&&settings.base){const repair=path.join(releaseDir,'WorkHub-'+p.version+'-repair.zip');run(process.env.PYTHON||'python',[path.join(tools,'package-files.py'),'repair',out,repair,path.join(settings.base.directory,'assets/workhub-installation.json')]);verifyRepair(repair,p.version);feed.repair=asset(repair);}
  for(const file of fs.readdirSync(releaseDir).filter(n=>n.endsWith('.zip')))fs.writeFileSync(path.join(releaseDir,file+'.sha256'),hash(path.join(releaseDir,file))+'  '+file+'\n');
  fs.writeFileSync(path.join(releaseDir,'latest.json'),JSON.stringify(feed,null,2)+'\n');
  console.log('Paquete completo, parche exacto y canal generados.');
