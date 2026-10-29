@@ -20,7 +20,7 @@ async function start(){
   let runtimeSource=null;const runtimeEntries=Object.entries(inventory.files).filter(([n])=>n.startsWith('runtime/'));
   for(const [name,record]of runtimeEntries){const relative=name.slice(8),file=path.join(root,relative==='WorkhubEngine.exe'?path.basename(process.execPath):relative);if(!fs.existsSync(file)||fs.statSync(file).size!==record.size||await engine.hashFile(file)!==record.sha256){runtimeSource=false;break;}}
   if(runtimeSource===false){
-   const client=createChannelClient(),channel=JSON.parse(fs.readFileSync(path.join(payload,'assets/update-channel.json'))).channel,info=await client.check(channel,'0.0.0');
+   const client=createChannelClient(),channel=JSON.parse(fs.readFileSync(path.join(payload,'assets/update-channel.json'))).channel,info=await client.check(channel.replace('/releases/latest/download/latest.json','/releases/download/v'+version+'/latest.json'),'0.0.0');
    if(info.version!==version)throw Error('El canal cambió de versión. Usá el ZIP de transición más reciente.');
    const file=path.join(job,'runtime-download.zip');await client.request(info.full.url,{destination:file,expectedHash:info.full.sha256,expectedSize:info.full.size,onProgress:p=>progress({message:p.message||'Descargando motor compatible…',received:p.received,size:p.total})});
    runtimeSource=engine.unzip(await fs.promises.readFile(file));
