@@ -7,7 +7,7 @@ function packageWindows(){
  if(process.platform!=='win32'&&!process.env.WORKHUB_QA_CROSS)throw Error('El paquete de entrega se compila en Windows.');
  fs.rmSync(out,{recursive:true,force:true});fs.mkdirSync(out,{recursive:true});const release=path.join(root,'release');fs.mkdirSync(release,{recursive:true});
  run(process.execPath,[path.join(__dirname,'build-ui.cjs')]);
- for(const name of ['dist','electron','shared','assets'])fs.cpSync(path.join(root,name),path.join(out,name),{recursive:true});
+ for(const name of ['dist','electron','assets'])fs.cpSync(path.join(root,name),path.join(out,name),{recursive:true});
  for(const name of ['package.json','package-lock.json','INICIAR-WORKHUB.bat','LEEME.txt'])fs.copyFileSync(path.join(root,name),path.join(out,name));
  for(const name of ['README.md','LICENSE','THIRD_PARTY.md'])fs.copyFileSync(path.join(root,name),path.join(out,'assets',name));
  const repo=process.env.GITHUB_REPOSITORY||null;
