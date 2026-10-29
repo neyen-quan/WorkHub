@@ -1,0 +1,23 @@
+node_modules/
+dist/
+release/
+.build/
+.qa/
+.env*
+*.zip
+*.exe
+*.db
+*.sqlite*
+*.log
+.workhub-updates/
+private-config.json
+update-channel.json
+!assets/update-channel.json
+profiles/
+userData/
+Cookies
+Preferences
+Local State
+Downloads/
+Documentos/
+Descargas/

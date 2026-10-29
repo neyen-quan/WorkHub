@@ -1,0 +1,10 @@
+const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),{execFileSync}=require('node:child_process');const {plan}=require('../tools/release-plan.cjs');
+function repo(t){const root=fs.mkdtempSync(path.join(os.tmpdir(),'workhub plan '));t.after(()=>fs.rmSync(root,{recursive:true,force:true}));const git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim();git('init','-b','main');git('config','user.name','CI');git('config','user.email','account@example.invalid');fs.writeFileSync(path.join(root,'package.json'),JSON.stringify({version:'0.1.36'}));git('add','.');git('commit','-m','initial');return {root,git};}
+test('new main version publishes once; unchanged published version is verified without another release or rebuild',t=>{
+ const r=repo(t);let published=null;const execute=(cmd,args)=>{if(cmd==='git')return r.git(...args);if(!published)throw Error('no release');return JSON.stringify(published);};
+ const first=plan({execute,env:{GITHUB_EVENT_NAME:'push'}});assert.equal(first.publish,'true');r.git('tag','v0.1.36');published={isDraft:false,tagName:'v0.1.36',assets:[]};fs.writeFileSync(path.join(r.root,'note.txt'),'another commit');r.git('add','.');r.git('commit','-m','docs same version');const second=plan({execute,env:{GITHUB_EVENT_NAME:'push'}});assert.equal(second.publish,'false');assert.equal(second.verify,'true');assert.equal(second.source,first.source);
+});
+test('recovery resolves existing tag source; incomplete draft resumes and tag/version mismatch is rejected',t=>{
+ const r=repo(t);r.git('tag','v0.1.36');const execute=(cmd,args)=>cmd==='git'?r.git(...args):JSON.stringify({isDraft:true,tagName:'v0.1.36',assets:[]});const result=plan({execute,env:{GITHUB_EVENT_NAME:'workflow_dispatch',RELEASE_TAG:'v0.1.36'}});assert.equal(result.publish,'true');assert.equal(result.source,r.git('rev-parse','v0.1.36^{commit}'));r.git('tag','v0.1.37');assert.throws(()=>plan({execute,env:{GITHUB_EVENT_NAME:'workflow_dispatch',RELEASE_TAG:'v0.1.37'}}),/coincide/);
+});
+

@@ -1,0 +1,114 @@
+name: Publicar WorkHub
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Tag existente a recuperar con las herramientas actuales de main (vX.Y.Z)'
+        required: true
+        type: string
+permissions:
+  contents: write
+concurrency:
+  group: workhub-release
+  cancel-in-progress: false
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Decidir publicación sin duplicados
+        id: plan
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: node tools/release-plan.cjs
+      - name: Conservar las herramientas del pipeline actual
+        shell: pwsh
+        env:
+          SOURCE_COMMIT: ${{ steps.plan.outputs.source }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $saved=Join-Path $env:RUNNER_TEMP 'workhub-current-pipeline'
+          Copy-Item tools $saved -Recurse
+          Copy-Item electron/desktop-update.cjs (Join-Path $saved 'engine.cjs')
+          "WORKHUB_PIPELINE_TOOLS=$saved" >> $env:GITHUB_ENV
+          "WORKHUB_SOURCE_ROOT=$env:GITHUB_WORKSPACE" >> $env:GITHUB_ENV
+          "WORKHUB_SOURCE_SHA=$env:SOURCE_COMMIT" >> $env:GITHUB_ENV
+          git checkout --detach $env:SOURCE_COMMIT
+          if($LASTEXITCODE -ne 0){throw 'No se pudo recuperar el código de la versión'}
+      - name: Verificar una versión ya publicada sin recompilar ni sobrescribir
+        if: steps.plan.outputs.verify == 'true'
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ steps.plan.outputs.tag }}
+        run: node "$env:WORKHUB_PIPELINE_TOOLS/release.cjs" verify $env:RELEASE_TAG
+      - name: Recuperar paquetes exactos publicados
+        if: steps.plan.outputs.publish == 'true'
+        id: prepare
+        shell: pwsh
+        run: node "$env:WORKHUB_PIPELINE_TOOLS/release.cjs" prepare
+      - name: Instalar dependencias fijadas para Windows
+        if: steps.plan.outputs.publish == 'true'
+        run: npm ci
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: steps.plan.outputs.publish == 'true' && steps.prepare.outputs.reuse != 'true'
+        with:
+          arch: x64
+      - name: Auditar fuentes y ejecutar pruebas en Windows
+        if: steps.plan.outputs.publish == 'true'
+        shell: pwsh
+        run: |
+          node "$env:WORKHUB_PIPELINE_TOOLS/audit.cjs"
+          if($LASTEXITCODE -ne 0){throw 'Falló la auditoría'}
+          npm test
+          if($LASTEXITCODE -ne 0){throw 'Fallaron las pruebas Windows'}
+      - name: Compilar paquete completo Windows
+        if: steps.plan.outputs.publish == 'true' && steps.prepare.outputs.reuse != 'true'
+        shell: pwsh
+        run: node "$env:WORKHUB_PIPELINE_TOOLS/package-windows.cjs"
+      - name: Generar parche incremental y canal
+        if: steps.plan.outputs.publish == 'true'
+        shell: pwsh
+        run: node "$env:WORKHUB_PIPELINE_TOOLS/release.cjs" build
+      - name: Probar EXE, modal real, actualización, progreso y recuperación en Windows
+        if: steps.plan.outputs.publish == 'true'
+        shell: pwsh
+        run: node "$env:WORKHUB_PIPELINE_TOOLS/test-windows.cjs"
+      - name: Subir borrador, verificar todos los assets y publicar
+        if: steps.plan.outputs.publish == 'true'
+        shell: pwsh
+        run: node "$env:WORKHUB_PIPELINE_TOOLS/release.cjs" publish
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.plan.outputs.publish == 'true'
+        with:
+          name: WorkHub-pruebas-Windows
+          include-hidden-files: true
+          path: |
+            .qa/*.json
+            .qa/*.log
+            .qa/*.png
+            .qa/*/*.json
+            .qa/*/*.log
+            .qa/*/WorkHub*/WorkHub-inicio-error.txt
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: success() && steps.plan.outputs.publish == 'true'
+        with:
+          name: WorkHub-entrega-verificada
+          path: release/*
+          if-no-files-found: error
+

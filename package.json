@@ -1,0 +1,23 @@
+{
+  "name": "workhub-desktop",
+  "version": "0.8.0",
+  "description": "WorkHub: cuentas, IA, documentos y herramientas de trabajo",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "build": "node tools/build-ui.cjs",
+    "dev": "electron . --dev",
+    "test": "node --test scripts/*.test.cjs",
+    "audit": "node tools/audit.cjs",
+    "package:win": "node tools/package-windows.cjs"
+  },
+  "dependencies": {
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "lucide-react": "0.468.0"
+  },
+  "devDependencies": {
+    "electron": "44.4.4",
+    "esbuild": "0.25.12"
+  },
+  "license": "MIT"
+}

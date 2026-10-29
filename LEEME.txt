@@ -1,0 +1,3 @@
+WorkHub — Espacio de trabajo
+Ejecutar WorkHub.exe. Actualizar programa → Buscar actualizaciones → Descargar e instalar.
+El perfil existente se conserva en APPDATA/workhub-desktop. No borrar las carpetas electron, dist, assets o runtime.
