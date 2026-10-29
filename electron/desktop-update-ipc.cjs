@@ -1,6 +1,6 @@
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),{spawn}=require('node:child_process');
 const engine=require('./desktop-update.cjs'),{createChannelClient,repositoryOf}=require('./update-channel.cjs');
-function installDesktopUpdater({app,ipcMain,dialog,host,root,runtime=process.execPath,platform=process.platform,BrowserWindow=require('electron').BrowserWindow,client=createChannelClient()}){
+function installDesktopUpdater({app,ipcMain,dialog,host,root,runtime=process.execPath,platform=process.platform,BrowserWindow=require('electron').BrowserWindow,displayFor=bounds=>require('electron').screen.getDisplayMatching(bounds),client=createChannelClient()}){
  root=fs.realpathSync(root);let center,busy=false,abort,info=null,downloaded=null;
  const version=()=>JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8')).version;
  const settings=path.join(app.getPath('userData'),'update-channel.json'),defaults=path.join(root,'assets/update-channel.json');
@@ -26,7 +26,7 @@ function installDesktopUpdater({app,ipcMain,dialog,host,root,runtime=process.exe
   notify({stage:'confirmation',message:'ZIP verificado. Esperando tu confirmación para instalar…',canCancel:false});
   const choice=await dialog.showMessageBox(center||host(),{type:'question',title:'Confirmar actualización de WorkHub',message:'Actualizar WorkHub '+version()+' → '+validated.manifest.version,detail:'Se respaldará la versión actual y se conservarán tus datos y preferencias. Guardá los formularios pendientes antes de continuar.\n\nZIP SHA-256: '+hash,buttons:['Descargar e instalar','Cancelar'],defaultId:0,cancelId:1,noLink:true});
   if(choice.response!==0||signal.aborted){notify({stage:'canceled',message:'Instalación cancelada. El ZIP verificado sigue disponible para reintentar.'});return {ok:true,canceled:true};}
-  const pending=await engine.prepareAsync(root,buffer,version(),progress,signal);if(signal.aborted){fs.rmSync(path.join(root,'.workhub-updates/active.json'),{force:true});fs.rmSync(pending.job,{recursive:true,force:true});throw Error('Operación cancelada.');}const journalFile=path.join(pending.job,'journal.json'),journal=JSON.parse(fs.readFileSync(journalFile,'utf8'));journal.startedAt=state.startedAt;await engine.atomicJsonAsync(journalFile,journal);let worker;
+  const pending=await engine.prepareAsync(root,buffer,version(),progress,signal);if(signal.aborted){fs.rmSync(path.join(root,'.workhub-updates/active.json'),{force:true});fs.rmSync(pending.job,{recursive:true,force:true});throw Error('Operación cancelada.');}const journalFile=path.join(pending.job,'journal.json'),journal=JSON.parse(fs.readFileSync(journalFile,'utf8'));journal.startedAt=state.startedAt;journal.hostBounds=host()?.getBounds();await engine.atomicJsonAsync(journalFile,journal);let worker;
   try{
    notify({stage:'handoff',message:'Abriendo el instalador independiente. WorkHub seguirá abierto hasta que esté listo.',canCancel:false});
    const env={...process.env};delete env.ELECTRON_RUN_AS_NODE;worker=spawn(pending.runtime,[pending.job,'--parent='+process.pid],{cwd:pending.job,env,windowsHide:true,detached:true,stdio:'ignore'});let failed;worker.once('error',e=>{failed=e;});worker.unref();
@@ -58,8 +58,9 @@ function installDesktopUpdater({app,ipcMain,dialog,host,root,runtime=process.exe
   });
  }
  function open(){
-  if(center&&!center.isDestroyed()){center.show();center.focus();return;}
-  center=new BrowserWindow({width:810,height:650,minWidth:620,minHeight:560,title:'Actualizar WorkHub',parent:host(),show:false,autoHideMenuBar:true,backgroundColor:'#10151d',icon:path.join(root,'assets/workhub.png'),webPreferences:{preload:path.join(__dirname,'update-center-preload.cjs'),contextIsolation:true,sandbox:true,nodeIntegration:false}});center.setMenu(null);center.once('ready-to-show',()=>center.show());center.on('closed',()=>{center=null;if(state.stage!=='handoff')abort?.abort();});center.loadFile(path.join(__dirname,'update-center.html'));
+  const owner=host(),area=displayFor(owner.getBounds()).workArea,bounds=centeredBounds(area,810,650);
+  if(center&&!center.isDestroyed()){center.setBounds(bounds);center.show();center.focus();return;}
+  center=new BrowserWindow({...bounds,minWidth:Math.min(620,area.width),minHeight:Math.min(560,area.height),title:'Actualizar WorkHub',parent:host(),show:false,autoHideMenuBar:true,backgroundColor:'#10151d',icon:path.join(root,'assets/workhub.png'),webPreferences:{preload:path.join(__dirname,'update-center-preload.cjs'),contextIsolation:true,sandbox:true,nodeIntegration:false}});center.setMenu(null);center.once('ready-to-show',()=>center.show());center.on('closed',()=>{center=null;if(state.stage!=='handoff')abort?.abort();});center.loadFile(path.join(__dirname,'update-center.html'));
  }
  ipcMain.handle('desktop-update-install',async event=>{try{hostAuth(event);if(platform!=='win32')return {ok:false,error:'La actualización está disponible en Windows.'};open();return {ok:true};}catch(e){return {ok:false,error:e.message};}});
  ipcMain.handle('update-center-ready',event=>{centerAuth(event);return state;});
@@ -75,5 +76,6 @@ function installDesktopUpdater({app,ipcMain,dialog,host,root,runtime=process.exe
  });
  return {getState:()=>state,getPending:()=>downloaded,command,open};
 }
-module.exports={installDesktopUpdater};
+function centeredBounds(area,width,height){width=Math.min(width,area.width);height=Math.min(height,area.height);return {x:area.x+Math.round((area.width-width)/2),y:area.y+Math.round((area.height-height)/2),width,height};}
+module.exports={installDesktopUpdater,centeredBounds};
 
