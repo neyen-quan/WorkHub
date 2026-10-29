@@ -2,7 +2,7 @@ const path=require('node:path');
 const fs=require('node:fs');
 const APP_ID='agency.neyen.workhub';
 function applyDesktopBranding({app,shell,win,exe=process.execPath,platform=process.platform}) {
- const icon=path.join(__dirname,'../assets/workhub.ico');
+ const icon=path.join(__dirname,'../assets/workhub-shell.ico');
  win.setIcon(icon);
  if(platform!=='win32')return;
  win.setAppDetails({appId:APP_ID,appIconPath:icon,appIconIndex:0,relaunchCommand:`"${exe}"`,relaunchDisplayName:'Workhub'});
@@ -10,7 +10,15 @@ function applyDesktopBranding({app,shell,win,exe=process.execPath,platform=proce
  const update=(file,create=false)=>{
   try {
    const exists=fs.existsSync(file);
-   if(exists && path.resolve(shell.readShortcutLink(file).target).toLowerCase()!==path.resolve(exe).toLowerCase())return;
+   if(exists){
+    const previous=shell.readShortcutLink(file);
+    const sameTarget=path.resolve(previous.target).toLowerCase()===path.resolve(exe).toLowerCase();
+    // AppUserModelID identifies this product even after moving its folder.
+    // Other hubs and unrelated shortcuts are never matched by filename alone.
+    const ours=previous.appUserModelId===APP_ID;
+    const legacyDesktop=create&&!previous.appUserModelId&&!fs.existsSync(previous.target)&&path.basename(previous.target).toLowerCase()==='workhub.exe';
+    if(!sameTarget&&!ours&&!legacyDesktop)return;
+   }
    if(exists || create) shell.writeShortcutLink(file,exists?'update':'create',options);
   }catch(error){console.warn('No se pudo actualizar el acceso directo de Workhub:',error.message);}
  };

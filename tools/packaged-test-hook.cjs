@@ -20,6 +20,15 @@ if(process.type==='browser'){
   const register=electron.ipcMain.handle.bind(electron.ipcMain);electron.ipcMain.handle=(name,handler)=>register(name,name!=='installer-ready'?handler:async(...args)=>{const until=Date.now()+15000;while(!fs.existsSync(ready)){if(lockerError)throw lockerError;if(Date.now()>until)throw Error('Could not acquire Windows progress lock');await new Promise(r=>setTimeout(r,100));}write('progress-lock.json',{locked:true,denyDelete:true});return handler(...args);});
  }
  const original=app.getPath.bind(app);app.getPath=k=>k==='appData'?path.join(qa,'profile'):original(k);
+ let movedShortcut,otherShortcut;
+ if(!job)app.on('ready',()=>{
+  const folder=path.join(app.getPath('appData'),'Microsoft','Internet Explorer','Quick Launch','User Pinned','TaskBar');fs.mkdirSync(folder,{recursive:true});
+  movedShortcut=path.join(folder,'WorkHub-moved.lnk');otherShortcut=path.join(folder,'OtherHub.lnk');
+  const old=path.join(qa,'old-location','WorkHub.exe'),icon=path.join(qa,'old-location','assets','workhub.ico');
+  if(!electron.shell.writeShortcutLink(movedShortcut,'create',{target:old,icon,iconIndex:0,appUserModelId:'agency.neyen.workhub'}))throw Error('Could not create Windows relocation fixture');
+  if(!electron.shell.writeShortcutLink(otherShortcut,'create',{target:old,icon,iconIndex:0,appUserModelId:'another.hub'}))throw Error('Could not create unrelated shortcut fixture');
+ });
+
  const pkg=()=>JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
  const captured=new Set();const capture=(wc,role)=>{if(captured.has(role))return;captured.add(role);setTimeout(async()=>{try{fs.writeFileSync(path.join(path.dirname(qa),path.basename(qa)+'-'+role+'.png'),(await wc.capturePage()).toPNG());}catch{}},350);};
  const write=(file,obj)=>fs.writeFileSync(path.join(qa,file),JSON.stringify(obj,null,2));
@@ -45,7 +54,10 @@ if(process.type==='browser'){
      await cookies.flushStore();if(seed)fs.writeFileSync(path.join(qa,'seeded'),'yes');
      const handle=win.getNativeWindowHandle().readBigUInt64LE().toString();
      const windowIcon=JSON.parse(await new Promise((resolve,reject)=>require('node:child_process').execFile('powershell.exe',['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(__dirname,'window-icon.ps1'),'-WindowHandle',handle],{encoding:'utf8',timeout:15000},(error,stdout)=>error?reject(error):resolve(stdout))));
-     const shellIcon=await app.getFileIcon(path.join(root,'assets',fs.existsSync(path.join(root,'assets/workhub-taskbar.ico'))?'workhub-taskbar.ico':'workhub.ico'),{size:'normal'});const pixels=shellIcon.toBitmap();let shellYellow=0;for(let i=0;i<pixels.length;i+=4){if(pixels[i+3]>100&&pixels[i+2]>140&&pixels[i+1]>90&&pixels[i]<180&&pixels[i+2]>=pixels[i+1])shellYellow++;}
+     const repaired=electron.shell.readShortcutLink(movedShortcut),untouched=electron.shell.readShortcutLink(otherShortcut);
+     if(path.resolve(repaired.target).toLowerCase()!==path.resolve(root,'WorkHub.exe').toLowerCase()||repaired.icon!==path.join(root,'assets/workhub-shell.ico')||untouched.appUserModelId!=='another.hub')throw Error('Windows shortcut repair failed');
+     write('shortcut-relocation.json',{ok:true,target:repaired.target,icon:repaired.icon,otherHubPreserved:true});
+     const shellIcon=await app.getFileIcon(path.join(root,'assets/workhub-shell.ico'),{size:'normal'});const pixels=shellIcon.toBitmap();let shellYellow=0;for(let i=0;i<pixels.length;i+=4){if(pixels[i+3]>100&&pixels[i+2]>140&&pixels[i+1]>90&&pixels[i]<180&&pixels[i+2]>=pixels[i+1])shellYellow++;}
      write('launch-'+version+'.json',{ok:true,version,windowIcon,shellYellow,local:result.local,cookie:found[0]?.value,root});
      if(process.env.WORKHUB_QA_FROM===version&&process.env.WORKHUB_QA_PATCH&&!fs.existsSync(path.join(qa,'requested'))){fs.writeFileSync(path.join(qa,'requested'),'yes');await win.webContents.executeJavaScript('window.workhub.updateDesktop()');}
     }else if(url.endsWith('/electron/update-center.html')&&process.env.WORKHUB_QA_PATCH){

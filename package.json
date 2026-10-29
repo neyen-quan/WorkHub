@@ -1,6 +1,6 @@
 {
   "name": "workhub-desktop",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "WorkHub: cuentas, IA, documentos y herramientas de trabajo",
   "main": "electron/main.cjs",
   "scripts": {

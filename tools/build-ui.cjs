@@ -5,3 +5,5 @@ fs.copyFileSync(path.join(root,'index.html'),path.join(root,'dist/index.html'));
 fs.copyFileSync(path.join(root,'assets/workhub.png'),path.join(root,'dist/workhub.png'));
 fs.copyFileSync(path.join(root,'assets/workhub.svg'),path.join(root,'dist/assets/workhub.svg'));
 
+
+fs.copyFileSync(path.join(root,'assets/workhub.ico'),path.join(root,'assets/workhub-shell.ico'));

@@ -18,3 +18,11 @@ test('ICO contains small taskbar sizes and high DPI artwork',()=>{
  for(let i=0;i<n;i++){const p=6+i*16;sizes.push(data[p]||256);assert.ok(data.readUInt32LE(p+12)+data.readUInt32LE(p+8)<=data.length);}
  for(const size of [16,24,32,48,64,128,256])assert.ok(sizes.includes(size));
 });
+
+test('moving WorkHub repairs shortcuts identified by its AppUserModelID and leaves other apps untouched',()=>{
+ const writes=[],source=fs.readFileSync(path.join(__dirname,'../electron/desktop-branding.cjs'),'utf8');
+ const scope={module:{exports:{}},__dirname:'/new/electron',console,process,require:n=>n==='node:fs'?{existsSync:()=>true,readdirSync:()=>['moved.lnk','other.lnk']}:require(n)};
+ vm.runInNewContext(source,scope);
+ scope.module.exports.applyDesktopBranding({exe:'/new/WorkHub.exe',platform:'win32',app:{getPath:n=>'/'+n},win:{setIcon(){},setAppDetails(){}},shell:{readShortcutLink:p=>({target:'/old/WorkHub.exe',appUserModelId:p.endsWith('other.lnk')?'another.product':'agency.neyen.workhub'}),writeShortcutLink:(...args)=>writes.push(args)}});
+ assert.equal(writes.length,2);for(const [name,op,details]of writes){assert.equal(op,'update');assert.ok(!name.endsWith('other.lnk'));assert.equal(details.target,'/new/WorkHub.exe');assert.equal(details.cwd,'/new');assert.equal(details.icon,'/new/assets/workhub-shell.ico');assert.equal(details.appUserModelId,'agency.neyen.workhub');}
+});
