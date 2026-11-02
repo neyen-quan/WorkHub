@@ -389,13 +389,12 @@ function createEditingController({ Menu, clipboard, readFiles, reportError, read
       if (params.linkURL) template.push({label:'Copiar enlace',click:() => clipboard.writeText(params.linkURL)});
       Menu.buildFromTemplate(template).popup({window:contents.getOwnerBrowserWindow() || undefined});
     });
-    contents.on('before-input-event', (event, input) => {
-      if (host || input.type !== 'keyDown' || input.alt) return;
-      const key = String(input.key || '').toLowerCase();
-      if (key === 'v' && (input.control || input.meta) && !input.shift || key === 'insert' && input.shift && !input.control && !input.meta) {
-        event.preventDefault(); void paste(contents,bridge);
-      }
-    });
+    // Keyboard paste belongs to Chromium and the focused editor. Intercepting
+    // Ctrl+V here discards the page's keydown (including its upload handling)
+    // and moves the paste behind an asynchronous OS clipboard read. Preserve
+    // the original gesture, target, FileList and trusted paste event in every
+    // WebContents, including new chats and SPA-replaced composers. The custom
+    // file bridge above is only needed by our explicit context-menu command.
   }
   return { install, paste };
 }

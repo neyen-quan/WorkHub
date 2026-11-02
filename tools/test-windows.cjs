@@ -62,7 +62,13 @@ async function repairArchive(){
  const {verifyRepair}=require(path.join(tools,'release.cjs')),{files,inventory}=verifyRepair(path.join(root,'release',name),pkg.version),base=path.join(root,'.build/published-base'),target=path.join(qa,'repair-install');fs.cpSync(base,target,{recursive:true});const personal=path.join(target,'user-project');fs.mkdirSync(personal);fs.writeFileSync(path.join(personal,'keep.txt'),'retained');fs.writeFileSync(path.join(target,'electron/main.cjs'),'partial failed update');
  for(const [name,bytes]of files){const file=engine.inside(target,name);fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,bytes);}await engine.verifyInventory(target,inventory);assert.equal(fs.readFileSync(path.join(personal,'keep.txt'),'utf8'),'retained');fs.writeFileSync(path.join(qa,'repair.json'),JSON.stringify({ok:true,partialInstallRepaired:true,localFilesPreserved:true,runtimeUnchanged:true}));
 }
-async function main(){if(process.platform!=='win32')throw Error('La aceptación de Windows se ejecuta en Windows.');await repairArchive();await exactDelta();await require(path.join(tools,'test-transition.cjs')).testTransition();await modal();await packaged();await packaged(true);console.log('PASS: EXE Windows, modal real, delta exacto, datos, progreso y rollback.');}
+async function clipboardRegression(){
+ const report=path.join(qa,'clipboard-native.json'),env={...process.env};delete env.ELECTRON_RUN_AS_NODE;delete env.NODE_OPTIONS;
+ const child=spawn(runtime,[path.join(tools,'clipboard-test-main.cjs'),'--report='+report,'--source='+built,'--disable-gpu'],{env,stdio:['ignore',fs.openSync(path.join(qa,'clipboard-native.log'),'w'),fs.openSync(path.join(qa,'clipboard-native-error.log'),'w')]});
+ child.on('error',error=>fs.writeFileSync(report,JSON.stringify({ok:false,error:error.stack})));
+ try{const result=await waitFile(report,60000);assert.equal(result.ok,true,JSON.stringify(result));console.log('PASS: native clipboard, new/split/reloaded chats, screenshots and Windows PDF.');}finally{try{child.kill();}catch{}}
+}
+async function main(){if(process.platform!=='win32')throw Error('La aceptación de Windows se ejecuta en Windows.');await clipboardRegression();await repairArchive();await exactDelta();await require(path.join(tools,'test-transition.cjs')).testTransition();await modal();await packaged();await packaged(true);console.log('PASS: EXE Windows, modal real, delta exacto, datos, progreso y rollback.');}
 if(require.main===module)main().catch(e=>{fs.writeFileSync(path.join(qa,'failure.json'),JSON.stringify({ok:false,error:e.stack},null,2));console.error(e);process.exitCode=1;});
 module.exports={testPatch};
 

@@ -66,9 +66,8 @@ window.addEventListener('drop', async event => {
 window.addEventListener('dragend', clearHint, true);
 window.addEventListener('pagehide', clearHint);
 
-// Clipboard images and files follow the same receiving-renderer principle as
-// inter-panel dragging. Ctrl+V is intercepted once in main, so a synthetic
-// attachment paste must never be followed by a second native paste.
+// Keyboard screenshots/files stay on Chromium's native paste path. Only the
+// explicit context-menu file bridge constructs a receiving-renderer event.
 let contextPasteTarget = null;
 function editableTarget(node) {
   const target = node?.closest?.('textarea,input,[contenteditable="true"],[contenteditable=""],[contenteditable="plaintext-only"]');
@@ -76,6 +75,18 @@ function editableTarget(node) {
   if (target.tagName === 'INPUT' && !['text','search','email','url','tel','password',''].includes(target.type)) return null;
   return target;
 }
+window.addEventListener('keydown', event => {
+  if (!event.isTrusted || event.altKey || event.shiftKey || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'v') return;
+  if (window.location.hostname !== 'chatgpt.com') return;
+  // A newly mounted ChatGPT composer can leave focus on body after a SPA
+  // navigation. Recover only that empty focus, never another input, a search
+  // box, a button or a modal. Resolve the live composer on each gesture.
+  const active = document.activeElement;
+  if (active && active !== document.body && active !== document.documentElement) return;
+  if ([...document.querySelectorAll('[role="dialog"],[aria-modal="true"]')].some(el => el.getClientRects().length)) return;
+  const target = editableTarget(document.querySelector('#prompt-textarea'));
+  if (target?.getClientRects().length) target.focus({preventScroll:true});
+}, true);
 window.addEventListener('contextmenu', event => { contextPasteTarget = editableTarget(event.target); }, true);
 window.addEventListener('pagehide', () => { contextPasteTarget = null; });
 ipcRenderer.on('workhub-paste-attachments', (_event, payload) => {

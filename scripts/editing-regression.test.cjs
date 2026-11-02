@@ -26,10 +26,10 @@ test('each paste reads the current screenshot and never clears or rewrites the c
  assert.equal(a.calls.filter(c=>c[0]==='paste').length,2);
  assert.equal(b.calls.filter(c=>c[0]==='paste').length,1);assert.deepEqual(h.writes,[]);
 });
-test('Ctrl+V intercepts once; Ctrl+B and Ctrl+Shift+V keep their normal meaning',async()=>{
- const h=harness(),a=h.view();h.controller.install(a,{attachments:true});h.image([5]);let prevented=0;
+test('keyboard shortcuts reach Chromium and page key handlers without reading or replaying clipboard',async()=>{
+ let reads=0;const h=harness({clipboard:{read:async()=>{reads++;throw Error('Keyboard must remain native');}}}),a=h.view();h.controller.install(a,{attachments:true});let prevented=0;
  for(const input of [{key:'v',control:true},{key:'b',control:true},{key:'v',control:true,shift:true},{key:'v',control:true,type:'keyUp'}])a.emit('before-input-event',{preventDefault:()=>prevented++},{type:'keyDown',...input});
- await new Promise(resolve=>setImmediate(resolve));assert.equal(prevented,1);assert.equal(a.calls.filter(c=>c[0]==='paste').length,1);
+ await new Promise(resolve=>setImmediate(resolve));assert.equal(prevented,0);assert.equal(reads,0);assert.deepEqual(a.calls,[]);
 });
 test('plain text and non-bridge views retain Chromium native paste',async()=>{
  const h=harness(),a=h.view();await h.controller.paste(a,true);assert.deepEqual(a.calls,[['focus'],['paste']]);
@@ -57,11 +57,11 @@ test('host file and tab menus are preserved; text inputs receive editing menu',(
 function receiver(){
  const listeners={},ipc=new EventEmitter(),errors=[],events=[];
  ipc.send=(...args)=>errors.push(args);
- const input={isConnected:true,tagName:'DIV',focus(){},closest(){return this;},dispatchEvent:event=>events.push(event)};
- const document={activeElement:input};
+ const input={isConnected:true,tagName:'DIV',focus(){document.activeElement=this;},closest(){return this;},getClientRects:()=>[{}],dispatchEvent:event=>events.push(event)};
+ const document={activeElement:input,body:{},documentElement:{},querySelector:()=>input,querySelectorAll:()=>[]};
  class Transfer {constructor(){this.files=[];this.items={add:file=>this.files.push(file)};}}
  class Paste {constructor(type,options){this.type=type;Object.assign(this,options);}}
- const context={require:()=>({ipcRenderer:ipc}),window:{addEventListener:(name,fn)=>listeners[name]=fn},document,File,Uint8Array,DataTransfer:Transfer,ClipboardEvent:Paste,setTimeout};
+ const context={require:()=>({ipcRenderer:ipc}),window:{location:{hostname:'chatgpt.com'},addEventListener:(name,fn)=>listeners[name]=fn},document,File,Uint8Array,DataTransfer:Transfer,ClipboardEvent:Paste,setTimeout};
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../electron/attachment-preload.cjs'),'utf8'),context);
  return {ipc,errors,events,input,document,listeners};
 }
@@ -73,11 +73,24 @@ test('receiving renderer creates a real PNG File in one paste event without a pa
 test('right-click paste remembers the editor; keyboard paste cannot target a stale editor',()=>{
  const h=receiver(),payload={files:[{name:'shot.png',bytes:new Uint8Array([1])}],contextMenu:true};
  h.listeners.contextmenu({target:h.input});h.document.activeElement={};h.ipc.emit('workhub-paste-attachments',{},payload);assert.equal(h.events.length,1);
+ h.document.activeElement={};
  h.ipc.emit('workhub-paste-attachments',{}, {...payload,contextMenu:false});assert.equal(h.events.length,1);assert.equal(h.errors[0][0],'workhub-paste-error');
 });
 test('a removed editor never receives pasted files',()=>{
  const h=receiver();h.listeners.contextmenu({target:h.input});h.input.isConnected=false;
  h.ipc.emit('workhub-paste-attachments',{}, {files:[{name:'shot.png',bytes:new Uint8Array([1])}],contextMenu:true});assert.equal(h.events.length,0);assert.equal(h.errors.length,1);
+});
+test('native paste in a new chat focuses its live composer without preventing or replaying the gesture',()=>{
+ const h=receiver();h.document.activeElement=h.document.body;
+ h.listeners.keydown({isTrusted:true,key:'v',ctrlKey:true,preventDefault:()=>assert.fail('must remain native')});
+ assert.equal(h.document.activeElement,h.input);assert.deepEqual(h.events,[]);assert.deepEqual(h.errors,[]);
+ const replacement={...h.input};h.document.querySelector=()=>replacement;h.document.activeElement=h.document.body;
+ h.listeners.keydown({isTrusted:true,key:'v',ctrlKey:true});assert.equal(h.document.activeElement,replacement);
+});
+test('paste focus recovery never steals search/modal focus or handles synthetic shortcuts',()=>{
+ const h=receiver(),search={};h.document.activeElement=search;h.listeners.keydown({isTrusted:true,key:'v',ctrlKey:true});assert.equal(h.document.activeElement,search);
+ h.document.activeElement=h.document.body;h.document.querySelectorAll=()=>[{getClientRects:()=>[{}]}];h.listeners.keydown({isTrusted:true,key:'v',ctrlKey:true});assert.equal(h.document.activeElement,h.document.body);
+ h.document.querySelectorAll=()=>[];h.listeners.keydown({isTrusted:false,key:'v',ctrlKey:true});assert.equal(h.document.activeElement,h.document.body);
 });
 
 // Model the documented modern Electron surface exactly: no availableFormats
